@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "852637676756",
+    "project_id": "ultimate-chess-c4fff",
+    "storage_bucket": "ultimate-chess-c4fff.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:852637676756:android:aeee243d072193d583f741",
+        "android_client_info": {
+          "package_name": "com.example.ultimatechess"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3igWFb1q6rdxJRq1KJIlecfbcRzWyrR4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,54 @@
+name: ultimatechess
+description: "A new Flutter project."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.3 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^3.6.0  # Nâng cấp phiên bản lên từ ^3.6.0 hoặc cao hơn
+  firebase_database: ^11.1.4
+  firebase_auth: ^5.3.0    # Sử dụng phiên bản tương thích với firebase_core
+  cloud_firestore: ^5.4.4  # Phiên bản phù hợp với firebase_core ^3.6.0
+  provider: ^6.1.2
+  google_fonts: ^2.0.0
+  image_picker: ^0.8.4+8
+  firebase_storage: ^12.3.3
+  sliding_up_panel: ^2.0.0
+  lottie: ^3.0.0
+  curved_navigation_bar: ^1.0.3
+  cupertino_icons: ^1.0.2
+  rive: ^0.13.10
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  assets:
+    - lib/images/
+    - assets/animations/chess.json
+    - assets/animations/chess_logo.json
+    - assets/animations/room.json
+    - assets/switch/switch_button.riv
+    - assets/switch/login_bear.riv
+  uses-material-design: true
+  fonts:
+    - family: Dancing Script
+      fonts:
+        - asset: assets/fonts/DancingScript-VariableFont_wght.ttf
+
+    - family: Sixtyfour Convergence
+      fonts:
+        - asset: assets/fonts/SixtyfourConvergence-Regular.ttf
+
+    - family: Permanent Marker
+      fonts:
+        - asset: assets/fonts/PermanentMarker-Regular.ttf
