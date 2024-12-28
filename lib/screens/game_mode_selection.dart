@@ -1,11 +1,13 @@
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:flutter/material.dart';
-import 'package:ultimatechess/game_mode/play_with_ai_screen.dart';
-import 'package:ultimatechess/game_mode/room_selection_screen.dart';
 import 'package:ultimatechess/screens/settings_screen.dart';
 import 'package:ultimatechess/screens/profile_screen.dart';
-import 'package:ultimatechess/screens/login_page.dart'; // Nhập LoginPage
+import 'package:ultimatechess/screens/login_page.dart';
 import 'package:lottie/lottie.dart';
+import 'package:ultimatechess/screens/guide.dart';
+import '../game_mode/ai_mode_selection_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../game_mode/room_selection_screen.dart';
 
 class GameModeSelection extends StatelessWidget {
   const GameModeSelection({super.key});
@@ -30,97 +32,51 @@ class GameModeSelection extends StatelessWidget {
                 // Hoạt ảnh logo
                 Container(
                   height: 250, // Chiều cao mong muốn
-                  width: 150,  // Chiều rộng mong muốn
+                  width: 150, // Chiều rộng mong muốn
                   child: Lottie.asset(
                     'assets/animations/chess_logo.json',
                     fit: BoxFit.contain,
                   ),
                 ),
-                SizedBox(height: 30), // Thêm khoảng cách
+                const SizedBox(height: 30), // Thêm khoảng cách
 
                 // Nút "Chơi với AI"
-                InkWell(
+                _buildRoundedButton(
+                  label: 'CHƠI VỚI MÁY',
+                  color: Colors.white,
                   onTap: () {
-                    _navigateWithSlideTransition(context, PlayWithAiScreen());
+                    _navigateWithSlideTransition(context, AiModeSelectionScreen());
                   },
-                  splashColor: Colors.blue.withAlpha(30),
-                  child: Ink(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8.0),
-                    ),
-                    child: Container(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.computer, size: 30),
-                          SizedBox(width: 10),
-                          Text(
-                            'Chơi với máy',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
 
                 // Nút "Chơi Online"
-                InkWell(
+                _buildRoundedButton(
+                  label: 'CHƠI TRỰC TUYẾN',
+                  color: Colors.white,
                   onTap: () {
-                    _navigateWithSlideTransition(context, RoomSelectionScreen());
+                    _navigateWithSlideTransition(context, const JoinOrCreateRoomScreen());
                   },
-                  splashColor: Colors.green.withAlpha(30),
-                  child: Ink(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8.0),
-                    ),
-                    child: Container(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.wifi, size: 30),
-                          SizedBox(width: 10),
-                          Text(
-                            'Chơi Online',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 ),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
+
+                // Nút "Hướng dẫn chơi"
+                _buildRoundedButton(
+                  label: 'HƯỚNG DẪN CHƠI',
+                  color: Colors.white,
+                  onTap: () {
+                    _navigateWithSlideTransition(context, GuideScreen());
+                  },
+                ),
+                const SizedBox(height: 20),
+
                 // Nút "Sign Out"
-                InkWell(
+                _buildRoundedButton(
+                  label: 'ĐĂNG XUẤT',
+                  color: Colors.white,
                   onTap: () {
                     _logout(context);
                   },
-                  splashColor: Colors.red.withAlpha(30),
-                  child: Ink(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8.0),
-                    ),
-                    child: Container(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.logout, size: 30),
-                          SizedBox(width: 10),
-                          Text(
-                            'Đăng xuất',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -153,6 +109,44 @@ class GameModeSelection extends StatelessWidget {
     );
   }
 
+  // Hàm tạo nút bấm bo góc
+  Widget _buildRoundedButton({
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      splashColor: Colors.blue.withAlpha(30),
+      child: Ink(
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(40.0), // Bo góc của nút
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 6,
+              offset: Offset(0, 3), // Đổ bóng nhẹ
+            ),
+          ],
+        ),
+        child: Container(
+          width: 100 ,
+          height: 50,
+          padding: const EdgeInsets.symmetric(vertical:8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold,  color: Color(0xFF3F414E),),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   // Hàm chuyển màn hình với hiệu ứng slide
   void _navigateWithSlideTransition(BuildContext context, Widget screen) {
@@ -164,7 +158,6 @@ class GameModeSelection extends StatelessWidget {
           const begin = Offset(2.0, 0.0); // Từ phải sang trái
           const end = Offset.zero;
           const curve = Curves.ease;
-
           var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
           var offsetAnimation = animation.drive(tween);
 
@@ -182,20 +175,86 @@ class GameModeSelection extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
+        title: const Text(
           'Liên hệ',
-          style: TextStyle(fontWeight: FontWeight.bold), // Đặt chữ đậm cho tiêu đề
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        content: Text(
-          'Email: lehuynhngocbac@gmail.com\nPhone: +84908009302',
-          style: TextStyle(fontWeight: FontWeight.bold), // Đặt chữ đậm cho nội dung
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Kết nối với tôi qua các nền tảng:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.facebook, color: Colors.blue, size: 40),
+                  onPressed: () async {
+                    final Uri facebookUrl = Uri.parse('https://www.facebook.com/saigonbalee2003/');
+                    try {
+                      if (await canLaunchUrl(facebookUrl)) {
+                        await launchUrl(facebookUrl, mode: LaunchMode.externalApplication);
+                      } else {
+                        throw 'Không thể mở URL $facebookUrl';
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Lỗi: $e')),
+                      );
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.video_library, color: Colors.red, size: 40),
+                  onPressed: () async {
+                    final Uri youtubeUrl = Uri.parse('https://www.youtube.com/@embaletainam');
+                    try {
+                      if (await canLaunchUrl(youtubeUrl)) {
+                        await launchUrl(youtubeUrl, mode: LaunchMode.externalApplication);
+                      } else {
+                        throw 'Không thể mở URL $youtubeUrl';
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Lỗi: $e')),
+                      );
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.email, color: Colors.orange, size: 40),
+                  onPressed: () async {
+                    final Uri emailUrl = Uri(
+                      scheme: 'mailto',
+                      path: 'lehuynhngocbac@gmail.com',
+                      query: 'subject=Liên hệ từ ứng dụng&body=Xin chào!',
+                    );
+                    try {
+                      if (await canLaunchUrl(emailUrl)) {
+                        await launchUrl(emailUrl);
+                      } else {
+                        throw 'Không thể mở ứng dụng Email';
+                      }
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Lỗi: $e')),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
-              'OK',
-              style: TextStyle(fontWeight: FontWeight.bold), // Đặt chữ đậm cho nút OK
+            child: const Text(
+              'Đóng',
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -207,30 +266,30 @@ class GameModeSelection extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
+        title: const Text(
           'Đăng xuất',
-          style: TextStyle(fontWeight: FontWeight.bold), // Đặt chữ đậm cho tiêu đề
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        content: Text(
+        content: const Text(
           'Bạn có chắc là mình muốn đăng xuất?',
-          style: TextStyle(fontWeight: FontWeight.bold), // Đặt chữ đậm cho nội dung
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
+            child: const Text(
               'Huỷ',
-              style: TextStyle(fontWeight: FontWeight.bold), // Đặt chữ đậm cho nút Cancel
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // Đóng hộp thoại
-              _navigateWithSlideTransition(context, LoginPage()); // Sử dụng hiệu ứng khi chuyển về trang Login
+              Navigator.pop(context);
+              _navigateWithSlideTransition(context, LoginPage());
             },
-            child: Text(
+            child: const Text(
               'Đăng xuất',
-              style: TextStyle(fontWeight: FontWeight.bold), // Đặt chữ đậm cho nút Sign Out
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
         ],

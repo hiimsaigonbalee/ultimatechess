@@ -14,13 +14,14 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
   final _countryController = TextEditingController();
   final _gamesPlayedController = TextEditingController();
   final _gamesWonController = TextEditingController();
   final _eloController = TextEditingController();
 
-  File? _avatar; // Biến này dùng để lưu trữ ảnh đại diện
+  File? _avatar;
+  String? _avatarUrl;
+  bool _isLoading = false;
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -34,172 +35,195 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadUserProfile() async {
     User? user = _auth.currentUser;
     if (user != null) {
-      DocumentSnapshot userDoc =
-      await _firestore.collection('users').doc(user.uid).get();
-
-      if (userDoc.exists) {
-        Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
-
-        setState(() {
-          _nameController.text = data['name'] ?? '';
-          _emailController.text = data['email'] ?? '';
-          _countryController.text = data['country'] ?? '';
-          _gamesPlayedController.text = data['gamesPlayed']?.toString() ?? '0';
-          _gamesWonController.text = data['gamesWon']?.toString() ?? '0';
-          _eloController.text = data['elo']?.toString() ?? '0';
-        });
+      try {
+        DocumentSnapshot userDoc =
+        await _firestore.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+          Map<String, dynamic> data = userDoc.data() as Map<String, dynamic>;
+          setState(() {
+            _nameController.text = data['name'] ?? '';
+            _countryController.text = data['country'] ?? '';
+            _gamesPlayedController.text = data['gamesPlayed']?.toString() ?? '0';
+            _gamesWonController.text = data['gamesWon']?.toString() ?? '0';
+            _eloController.text = data['elo']?.toString() ?? '0';
+            _avatarUrl = data['avatarUrl'];
+          });
+        } else {
+          _showSnackBar('Không tìm thấy thông tin người dùng.');
+        }
+      } catch (e) {
+        _showSnackBar('Lỗi khi tải thông tin người dùng: $e');
       }
+    } else {
+      _showSnackBar('Không tìm thấy người dùng.');
     }
   }
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-
     if (pickedFile != null) {
       setState(() {
-        _avatar = File(pickedFile.path); // Lưu trữ ảnh đại diện cục bộ
+        _avatar = File(pickedFile.path);
       });
     }
   }
 
-  Future<void> _saveProfile() async {
+  Future<void> _saveUserProfile() async {
     User? user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      _showSnackBar('Bạn cần đăng nhập để lưu thông tin.');
+      return;
+    }
 
-    // Cập nhật thông tin người dùng trong Firestore mà không có _avatarUrl
-    await _firestore.collection('users').doc(user.uid).set({
-      'name': _nameController.text,
-      'email': _emailController.text,
-      'country': _countryController.text,
-      'gamesPlayed': int.tryParse(_gamesPlayedController.text) ?? 0,
-      'gamesWon': int.tryParse(_gamesWonController.text) ?? 0,
-      'elo': int.tryParse(_eloController.text) ?? 0,
-      // Bỏ qua avatarUrl
-    }, SetOptions(merge: true));
+    if (_nameController.text.isEmpty || _countryController.text.isEmpty) {
+      _showSnackBar('Vui lòng nhập đầy đủ thông tin.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    String? avatarUrl = _avatarUrl;
+
+    if (_avatar != null) {
+      final ref =
+      FirebaseStorage.instance.ref().child('avatars').child('${user.uid}.jpg');
+      try {
+        await ref.putFile(_avatar!);
+        avatarUrl = await ref.getDownloadURL();
+      } catch (e) {
+        _showSnackBar('Lỗi khi tải ảnh lên: $e');
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+    }
+
+    try {
+      await _firestore.collection('users').doc(user.uid).set({
+        'name': _nameController.text,
+        'country': _countryController.text,
+        'gamesPlayed': int.tryParse(_gamesPlayedController.text) ?? 0,
+        'gamesWon': int.tryParse(_gamesWonController.text) ?? 0,
+        'elo': int.tryParse(_eloController.text) ?? 0,
+        'avatarUrl': avatarUrl,
+      }, SetOptions(merge: true));
+
+      _showSnackBar('Lưu thông tin thành công!');
+    } catch (e) {
+      _showSnackBar('Lỗi khi lưu thông tin: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'THÔNG TIN NGƯỜI CHƠI',
+        title: const Text(
+          'Thông Tin Người Chơi',
           style: TextStyle(
-            fontFamily: 'Dancing Script',
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
             color: Colors.white,
+            fontSize: 20,
           ),
         ),
-
-        backgroundColor: Colors.blue[200],
-        iconTheme: IconThemeData(
-          color: Colors.white, // Đổi màu nút "Back"
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.save),
-            onPressed: _saveProfile,
-          ),
-        ],
+        backgroundColor: Colors.blueAccent,
+        centerTitle: true,
       ),
-      body: Center( // Sử dụng Center để căn giữa
+      body: Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: SingleChildScrollView(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center, // Căn giữa theo chiều dọc
-              crossAxisAlignment: CrossAxisAlignment.center, // Căn giữa theo chiều ngang
               children: [
-                Column(
-                  children: [
-                    GestureDetector(
-                      onTap: _pickImage,
-                      child: CircleAvatar(
-                        radius: 60, // Tăng kích thước avatar
+                GestureDetector(
+                  onTap: _pickImage,
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      CircleAvatar(
+                        radius: 70,
                         backgroundImage: _avatar != null
-                            ? FileImage(_avatar!) // Hiển thị ảnh đại diện cục bộ
-                            : null,
-                        child: (_avatar == null)
-                            ? Icon(Icons.add_a_photo, size: 60, color: Colors.white)
+                            ? FileImage(_avatar!)
+                            : (_avatarUrl != null ? NetworkImage(_avatarUrl!) : null),
+                        child: (_avatar == null && _avatarUrl == null)
+                            ? const Icon(Icons.person, size: 70, color: Colors.grey)
                             : null,
                         backgroundColor: Colors.grey[200],
                       ),
-                    ),
-                    SizedBox(height: 150),
-                    TextField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: 'Tên',
-                        prefixIcon: Icon(Icons.person),
-                        border: OutlineInputBorder(),
+                      CircleAvatar(
+                        radius: 25,
+                        backgroundColor: Colors.blueAccent,
+                        child: const Icon(Icons.camera_alt, color: Colors.white),
                       ),
-                    ),
-                    SizedBox(height: 10),
-                    TextField(
-                      controller: _emailController,
-                      decoration: InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email),
-                        border: OutlineInputBorder(),
-                      ),
-                      readOnly: true,
-                    ),
-                  ],
-                ),
-                SizedBox(height: 20),
-                TextField(
-                  controller: _countryController,
-                  decoration: InputDecoration(
-                    labelText: 'Quốc gia',
-                    prefixIcon: Icon(Icons.flag),
-                    border: OutlineInputBorder(),
+                    ],
                   ),
                 ),
-                SizedBox(height: 10),
-                TextField(
-                  controller: _gamesPlayedController,
-                  decoration: InputDecoration(
-                    labelText: 'Số game đã chơi',
-                    prefixIcon: Icon(Icons.sports_esports),
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-                SizedBox(height: 10),
-                TextField(
-                  controller: _gamesWonController,
-                  decoration: InputDecoration(
-                    labelText: 'Số game đã thắng',
-                    prefixIcon: Icon(Icons.emoji_events),
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-                SizedBox(height: 10),
-                TextField(
-                  controller: _eloController,
-                  decoration: InputDecoration(
-                    labelText: 'Elo',
-                    prefixIcon: Icon(Icons.star),
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
+                const SizedBox(height: 30),
+                _buildInputCard(_nameController, 'Tên', Icons.person),
+                const SizedBox(height: 20),
+                _buildInputCard(_countryController, 'Quốc gia', Icons.flag),
+                const SizedBox(height: 20),
+                _buildInputCard(_gamesPlayedController, 'Số game đã chơi',
+                    Icons.sports_esports,
+                    isNumeric: true),
+                const SizedBox(height: 20),
+                _buildInputCard(
+                    _gamesWonController, 'Số game đã thắng', Icons.emoji_events,
+                    isNumeric: true),
+                const SizedBox(height: 20),
+                _buildInputCard(_eloController, 'Elo', Icons.star,
+                    isNumeric: true),
+                if (_isLoading)
+                  const CircularProgressIndicator(),
               ],
             ),
           ),
         ),
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _isLoading ? null : _saveUserProfile,
+        child: const Icon(Icons.save),
+        backgroundColor: Colors.blueAccent,
+        tooltip: 'Lưu thông tin',
+      ),
     );
   }
 
+  Widget _buildInputCard(TextEditingController controller, String label,
+      IconData icon,
+      {bool isNumeric = false}) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        child: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            labelText: label,
+            prefixIcon: Icon(icon),
+            border: InputBorder.none,
+          ),
+          keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
     _countryController.dispose();
     _gamesPlayedController.dispose();
     _gamesWonController.dispose();
@@ -207,4 +231,3 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 }
-

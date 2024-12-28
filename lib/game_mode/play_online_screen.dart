@@ -1,260 +1,163 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
-import '../game_board.dart'; // Giả sử bạn đã có màn hình game board
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../components/piece.dart';
+import '../enviroment/weather.dart';
+import '../game_board.dart';
+
 
 class PlayOnlineScreen extends StatefulWidget {
-  final String roomId; // Thêm roomId làm tham số
-
-  PlayOnlineScreen({required this.roomId,});
+  final String roomId;
+  final String initialWeather;
+  const PlayOnlineScreen({Key? key, required this.roomId, this.initialWeather = 'sunny'}) : super(key: key);
 
   @override
   _PlayOnlineScreenState createState() => _PlayOnlineScreenState();
 }
 
 class _PlayOnlineScreenState extends State<PlayOnlineScreen> {
-  late DatabaseReference databaseRef;
-  String latestMove = " ";
-  bool isPlayerTurn = true; // Biến để quản lý lượt chơi
-  bool isMusicOn = true; // Trạng thái nhạc
+  late IO.Socket socket;
+  String? playerColor;
+  bool isPlayerTurn = false;
+  bool isRoomReady = false;
+  List<List<ChessPiece?>> board = List.generate(8, (_) => List.filled(8, null));
+  WeatherType currentWeather = WeatherType.sunny;
+
 
   @override
   void initState() {
     super.initState();
-    initializeFirebase();
+    connectToServer();
+    currentWeather = _parseWeatherFromString(widget.initialWeather);
   }
 
-  void initializeFirebase() {
-    databaseRef = FirebaseDatabase.instance.ref("games/${widget.roomId}"); // Dùng roomId từ widget
+  void connectToServer() {
+    socket = IO.io(
+      'http://192.168.1.5:3000', // Thay YOUR_COMPUTER_IP bằng IP thật của máy tính
+      IO.OptionBuilder()
+          .setTransports(['websocket'])
+          .enableAutoConnect()
+          .setReconnectionAttempts(5) // Thêm số lần thử kết nối lại
+          .setReconnectionDelay(1000) // Delay giữa các lần thử kết nối
+          .build(),
+    );
 
-    // Lắng nghe trạng thái ban đầu từ Firebase
-    databaseRef.child("turn").get().then((snapshot) {
-      if (snapshot.exists) {
-        String turn = snapshot.value.toString();
-        setState(() {
-          isPlayerTurn = (turn == "player1");
-        });
-      } else {
-        print("Turn information is not available.");
-      }
-    }).catchError((error) {
-      print("Failed to fetch turn data: $error");
+    setupSocketListeners();
+  }
+
+  void setupSocketListeners() {
+    socket.onConnect((_) {
+      print('Connected to server with ID: ${socket.id}');
+      print('Trying to join room: ${widget.roomId}');
+      socket.emit("join-room", {'roomId': widget.roomId});
     });
 
-    listenToMoves(); // Lắng nghe nước đi từ Firebase
-  }
-
-  // Lắng nghe nước đi từ đối thủ
-  void listenToMoves() {
-    databaseRef.onValue.listen((event) {
-      final data = event.snapshot.value as Map?;
-      if (data != null) {
-        updateGameState(data);
-      } else {
-        print("No data received.");
-      }
-    }, onError: (error) {
-      print("Failed to listen to moves: $error");
+    socket.on("error", (data) {
+      print('Socket error: $data');
+      showError(data.toString());
     });
-  }
 
-  void joinRoom(String roomId, String playerName) {
-    databaseRef = FirebaseDatabase.instance.ref("games/$roomId");
-
-    databaseRef.child("player1").get().then((snapshot) {
-      if (snapshot.exists && snapshot.value.toString() != "waiting") {
-        // Nếu đã có player1, kiểm tra player2
-        databaseRef.child("player2").get().then((snapshot) {
-          if (snapshot.exists && snapshot.value.toString() != "waiting") {
-            print("Room is full. Please choose another room.");
-          } else {
-            // Nếu chưa có player2, tham gia vào
-            databaseRef.update({
-              "player2": playerName,
-              "turn": "player1" // Đặt lượt cho player1
-            }).then((_) {
-              print("Joined as player2!");
-            });
-          }
-        });
-      } else {
-        // Nếu chưa có player1, tham gia vào với tư cách là player1
-        databaseRef.update({
-          "player1": playerName,
-          "turn": "player1" // Đặt lượt cho player1
-        }).then((_) {
-          print("Joined as player1!");
-        });
-      }
-    });
-  }
-  void leaveRoom(String roomId, String playerName) {
-    databaseRef.child("player1").get().then((snapshot) {
-      if (snapshot.exists && snapshot.value.toString() == playerName) {
-        // Nếu player1 thoát
-        databaseRef.update({
-          "player1": "waiting", // Đặt lại trạng thái
-          "turn": "player1" // Đặt lượt cho player1
-        });
-      } else {
-        // Nếu player2 thoát
-        databaseRef.update({
-          "player2": "waiting" // Đặt lại trạng thái
-        });
-      }
-    });
-  }
-  void checkRoomStatus(String roomId) {
-    databaseRef = FirebaseDatabase.instance.ref("games/$roomId");
-
-    databaseRef.get().then((snapshot) {
-      if (snapshot.exists) {
-        String player1Status = snapshot.child("player1").value.toString();
-        String player2Status = snapshot.child("player2").value.toString();
-        String currentTurn = snapshot.child("turn").value.toString();
-
-        if (player1Status == "waiting" && player2Status == "waiting") {
-          print("Room is empty, you can create a new game.");
-        } else {
-          // Thiết lập lượt chơi cho người chơi hiện tại
-          setState(() {
-            isPlayerTurn = (currentTurn == "player1");
-          });
-        }
-      } else {
-        print("Room does not exist.");
-      }
-    }).catchError((error) {
-      print("Error getting room status: $error");
-    });
-  }
-
-  void updateGameState(Map data) {
-    if (data.containsKey("latestMove")) {
+    socket.on("room-status", (data) {
       setState(() {
-        latestMove = data["latestMove"];
-        isPlayerTurn = (data["turn"] == "player1"); // Cập nhật lượt chơi dựa trên dữ liệu từ Firebase
-        // Cập nhật trạng thái bàn cờ nếu cần
-        // updateGameBoard(latestMove);
+        isRoomReady = data['players']?.length == 2; // Kiểm tra nếu phòng đủ 2 người chơi
+
+        final players = data['players'] as List;
+        playerColor = players.firstWhere(
+                (p) => p['id'] == socket.id,
+            orElse: () => null
+        )?['color'];
+
+        isPlayerTurn = data['currentTurn'] == socket.id; // Xác định lượt chơi
+        board = parseBoardFromServer(data['board']); // Đồng bộ bàn cờ
+        currentWeather = _parseWeatherFromString(data['weather']); // Đồng bộ thời tiết
       });
-    }
-  }
 
-  // Gửi nước đi lên Firebase và chuyển lượt
-  void sendMove(String move) {
-    if (!isPlayerTurn) {
-      print("Không phải lượt của bạn.");
-      return; // Không gửi nước đi nếu không phải lượt của người chơi
-    }
+      // In log để kiểm tra trạng thái phòng
+      print("ROOM STATUS: $data");
+    });
 
-    // Fetch current turn from Firebase to ensure real-time accuracy
-    databaseRef.child("turn").get().then((snapshot) {
-      if (snapshot.exists) {
-        String currentTurn = snapshot.value.toString();
+    socket.on("game-update", (data) {
+      setState(() {
+        final moveData = data['move'];
+        board[moveData['endRow']][moveData['endCol']] =
+        board[moveData['startRow']][moveData['startCol']];
+        board[moveData['startRow']][moveData['startCol']] = null;
 
-        // Kiểm tra nếu đúng lượt của người chơi, nếu không thì return
-        if ((currentTurn == "player1" && !isPlayerTurn) || (currentTurn == "player2" && isPlayerTurn)) {
-          print("It's not your turn yet.");
-          return;
-        }
+        isPlayerTurn = moveData['currentTurn'] == socket.id;
+        currentWeather = _parseWeatherFromString(data['weather']);
+      });
+    });
 
-        // Nếu tất cả đều ổn, cập nhật nước đi và chuyển lượt
-        String nextTurn = (currentTurn == "player1") ? "player2" : "player1"; // Xác định người chơi tiếp theo
+    socket.on("player-left", (message) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text("Game Ended"),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("OK"),
+            ),
+          ],
+        ),
+      );
+    });
 
-        // Cập nhật lượt chơi và nước đi mới lên Firebase
-        databaseRef.update({
-          "latestMove": move,
-          "turn": nextTurn,
-        }).then((_) {
-          print("Move sent successfully!");
-          setState(() {
-            isPlayerTurn = false; // Đổi lượt sau khi gửi
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Nước đi đã được gửi thành công!")),
-          );
-        }).catchError((error) {
-          print("Failed to send move: $error");
-        });
-      } else {
-        print("Could not determine current turn.");
-      }
-    }).catchError((error) {
-      print("Error getting current turn: $error");
+    socket.onDisconnect((_) {
+      print('Disconnected from server');
     });
   }
 
-
-  // Hàm mở Bottom Sheet hiển thị các tùy chọn
-  void _showSettingsBottomSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(25.0),
+  List<List<ChessPiece?>> parseBoardFromServer(List<dynamic> serverBoard) {
+    return List.generate(8, (row) => List.generate(8, (col) {
+      final pieceData = serverBoard[row][col];
+      if (pieceData == null) return null;
+      return ChessPiece(
+        type: ChessPieceType.values.firstWhere(
+                (e) => e.toString().split('.').last.toLowerCase() == pieceData['type']
         ),
-      ),
-      backgroundColor: Colors.white,
-      builder: (BuildContext context) {
-        return Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min, // Tự điều chỉnh chiều cao theo nội dung
-            children: <Widget>[
-              ListTile(
-                leading: Icon(Icons.music_note),
-                title: Text('Nhạc nền'),
-                trailing: Switch(
-                  value: isMusicOn,
-                  onChanged: (bool value) {
-                    setState(() {
-                      isMusicOn = value; // Cập nhật trạng thái nhạc
-                      // Thực hiện logic bật/tắt nhạc tại đây
-                    });
-                  },
-                ),
-              ),
-              ListTile(
-                leading: Icon(Icons.flag),
-                title: Text('Đầu hàng'),
-                onTap: () {
-                  // Xác nhận đầu hàng
-                  showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return AlertDialog(
-                        title: Text("Xác nhận"),
-                        content: Text("Bạn có chắc chắn muốn đầu hàng không?"),
-                        actions: [
-                          TextButton(
-                            onPressed: () {
-                              databaseRef.update({"winner": "player2"}); // Cập nhật người thắng
-                              Navigator.pop(context); // Đóng dialog
-                            },
-                            child: Text("Có"),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context), // Đóng dialog
-                            child: Text("Không"),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.exit_to_app),
-                title: Text('Thoát trận đấu'),
-                onTap: () {
-                  // Gọi hàm thoát phòng
-                  Navigator.pop(context); // Đóng Bottom Sheet
-                },
-              ),
+        isWhite: pieceData['isWhite'],
+        imagePath: "lib/images/${pieceData['type']}.png",
+      );
+    }));
+  }
 
-            ],
-          ),
-        );
-      },
+  WeatherType _parseWeatherFromString(String weatherStr) {
+    return WeatherType.values.firstWhere(
+          (w) => w.toString().split('.').last == weatherStr,
+      orElse: () => WeatherType.sunny,
+    );
+  }
+
+  bool canMovePiece(ChessPiece piece) {
+    if (playerColor == null) return false;
+    return (playerColor == 'white' && piece.isWhite) ||
+        (playerColor == 'black' && !piece.isWhite);
+  }
+
+  void sendMove(int startRow, int startCol, int endRow, int endCol) {
+    if (!isPlayerTurn) {
+      showError("Not your turn!");
+      return;
+    }
+
+    ChessPiece? piece = board[startRow][startCol];
+    if (piece == null || !canMovePiece(piece)) {
+      showError("Cannot move this piece!");
+      return;
+    }
+
+    socket.emit("move", {
+      "roomId": widget.roomId,
+      "startRow": startRow,
+      "startCol": startCol,
+      "endRow": endRow,
+      "endCol": endCol,
+    });
+}
+  void showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -262,36 +165,45 @@ class _PlayOnlineScreenState extends State<PlayOnlineScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.blue[300], // Màu nền AppBar
-        title: Text(
-          'Room ID: ${widget.roomId}',
-          style: TextStyle(
-            fontSize: 18,
-            color: Colors.white, // Màu chữ
-          ),
-        ),
-        centerTitle: true, // Đặt tiêu đề ở giữa
-        elevation: 4, // Thêm shadow
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.white), // Màu biểu tượng
-          onPressed: () {
-            Navigator.pop(context); // Quay lại trang trước
-          },
-        ),
+        title: Text("Room: ${widget.roomId}"),
         actions: [
-          IconButton(
-            icon: Icon(Icons.settings, color: Colors.white), // Biểu tượng cài đặt
-            onPressed: () {
-              _showSettingsBottomSheet(context); // Mở màn hình cài đặt khi nhấn
-            },
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(playerColor?.toUpperCase() ?? "SPECTATOR"),
+                Text(isPlayerTurn ? "YOUR TURN" : "WAITING"),
+              ],
+            ),
           ),
         ],
       ),
-      body: GameBoard(
-        onMove: (move) {
-          sendMove(move); // Gửi nước đi lên Firebase
-        },
+      body: isRoomReady
+          ? GameBoard(
+        board: board,
+        isPlayerTurn: isPlayerTurn,
+        onMove: sendMove,
+        currentWeather: currentWeather,
+        playerColor: playerColor,
+      )
+          : Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text("Waiting for opponent..."),
+          ],
+        ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    socket.disconnect();
+    socket.dispose();
+    super.dispose();
   }
 }

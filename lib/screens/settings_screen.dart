@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:rive/rive.dart';
 
 class ChessSettingsScreen extends StatefulWidget {
   const ChessSettingsScreen({super.key});
@@ -10,32 +9,13 @@ class ChessSettingsScreen extends StatefulWidget {
 
 class _ChessSettingsScreenState extends State<ChessSettingsScreen> {
   bool _isDarkTheme = false;
-  late RiveAnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = SimpleAnimation('Light'); // Mặc định là Light
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose(); // Dừng controller khi không còn sử dụng
-    super.dispose();
-  }
+  String _selectedTimeControl = 'Blitz';
+  bool _showValidMoves = true;
+  bool _enableSound = true;
 
   void _toggleTheme() {
     setState(() {
       _isDarkTheme = !_isDarkTheme;
-
-      // Dừng hoạt ảnh hiện tại
-      _controller.isActive = false;
-
-      // Cập nhật controller với hoạt ảnh tương ứng
-      _controller = SimpleAnimation(_isDarkTheme ? 'Day_to_night' : 'Night_to_day');
-
-      // Kích hoạt lại controller
-      _controller.isActive = true;
     });
   }
 
@@ -44,64 +24,93 @@ class _ChessSettingsScreenState extends State<ChessSettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'CÀI ĐẶT',
+          'Cài đặt',
           style: TextStyle(
-            fontFamily: 'Dancing Script',
-            fontSize: 20,
-            fontWeight: FontWeight.bold,// Đổi kiểu chữ thành Dancing Script
-            color: Colors.white,           // Đổi màu chữ thành trắng
+            color: Colors.white,
+            fontSize: 24,
           ),
         ),
-        backgroundColor: _isDarkTheme ? Colors.blue[200] : Colors.blue[800],
+        backgroundColor: _isDarkTheme ? Colors.grey[900] : Colors.blue[800],
         elevation: 0,
         iconTheme: IconThemeData(
-          color: Colors.white, // Đổi màu nút "Back"
+          color: Colors.white,
         ),
       ),
-      body: ListView(
-        padding: EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
-        children: [
-          _buildSectionHeader('Giao diện'),
-          _buildRiveThemeSwitcher(),
-          Divider(),
-          _buildSectionHeader('Thiết lập thời gian'),
-          _buildDropdownTile(
-            context,
-            icon: Icons.timer,
-            title: 'Kiểm soát thời gian',
-            items: ['Blitz', 'Rapid', 'Classical'],
-            onChanged: (value) {},
-          ),
-          Divider(),
-          _buildSectionHeader('Tùy chọn khác'),
-          SwitchListTile(
-            title: Text('Hiển thị nước đi hợp lệ'),
-            value: true,
-            onChanged: (bool value) {},
-            activeColor: Colors.blue[200],
-          ),
-          Divider(),
-          SwitchListTile(
-            title: Text('Bật âm thanh'),
-            value: true,
-            onChanged: (bool value) {},
-            activeColor: Colors.blue[300],
-          ),
-        ],
+      body: Container(
+        color: _isDarkTheme ? Colors.grey[850] : Colors.white,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+          children: [
+            _buildSectionHeader('Giao diện'),
+            _buildThemeSwitcher(),
+            const Divider(),
+            _buildSectionHeader('Thiết lập thời gian'),
+            _buildDropdownTile(
+              context,
+              icon: Icons.timer,
+              title: 'Kiểm soát thời gian',
+              items: ['Blitz', 'Rapid', 'Classical'],
+              selectedValue: _selectedTimeControl,
+              onChanged: (value) {
+                setState(() {
+                  _selectedTimeControl = value!;
+                });
+              },
+            ),
+            const Divider(),
+            _buildSectionHeader('Tùy chọn khác'),
+            SwitchListTile(
+              title: const Text('Hiển thị nước đi hợp lệ'),
+              value: _showValidMoves,
+              onChanged: (bool value) {
+                setState(() {
+                  _showValidMoves = value;
+                });
+              },
+              activeColor: Colors.blue[300],
+            ),
+            const Divider(),
+            SwitchListTile(
+              title: const Text('Bật âm thanh'),
+              value: _enableSound,
+              onChanged: (bool value) {
+                setState(() {
+                  _enableSound = value;
+                });
+              },
+              activeColor: Colors.blue[300],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildRiveThemeSwitcher() {
+  Widget _buildThemeSwitcher() {
     return GestureDetector(
       onTap: _toggleTheme,
-      child: SizedBox(
-        height: 100,
-        child: RiveAnimation.asset(
-          'assets/switch/switch_button.riv', // Đường dẫn tới file Rive của bạn
-          controllers: [_controller],
-          // Thêm điều kiện kiểm tra hoạt ảnh nếu cần
-          fit: BoxFit.cover, // Giúp hiển thị toàn bộ nội dung
+      child: Container(
+        decoration: BoxDecoration(
+          color: _isDarkTheme ? Colors.grey[700] : Colors.blue[100],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              _isDarkTheme ? 'Chế độ tối' : 'Chế độ sáng',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: _isDarkTheme ? Colors.white : Colors.blue[900],
+              ),
+            ),
+            Icon(
+              _isDarkTheme ? Icons.nights_stay : Icons.wb_sunny,
+              color: _isDarkTheme ? Colors.yellow : Colors.orange,
+            ),
+          ],
         ),
       ),
     );
@@ -112,20 +121,22 @@ class _ChessSettingsScreenState extends State<ChessSettingsScreen> {
         required IconData icon,
         required String title,
         required List<String> items,
+        required String selectedValue,
         required Function(String?) onChanged,
       }) {
     return ListTile(
       leading: Icon(icon, color: Colors.blue),
       title: Text(title),
       trailing: DropdownButton<String>(
+        value: selectedValue,
         items: items
             .map((item) => DropdownMenuItem(
-          value: item.toLowerCase(),
+          value: item,
           child: Text(item),
         ))
             .toList(),
         onChanged: onChanged,
-        underline: SizedBox(),
+        underline: const SizedBox(),
       ),
     );
   }
@@ -138,7 +149,7 @@ class _ChessSettingsScreenState extends State<ChessSettingsScreen> {
         style: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.bold,
-          color: Colors.blue[200],
+          color: _isDarkTheme ? Colors.white : Colors.blue[800],
         ),
       ),
     );

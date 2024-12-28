@@ -25,6 +25,13 @@ dependencies:
   curved_navigation_bar: ^1.0.3
   cupertino_icons: ^1.0.2
   rive: ^0.13.10
+  audioplayers: ^6.0.0
+  socket_io_client: ^3.0.2
+  uuid: ^3.0.7
+  url_launcher: ^6.3.1
+  liquid_swipe: ^3.1.0
+  web_socket_channel: ^2.4.0
+  shared_preferences: ^2.2.0
 
 dev_dependencies:
   flutter_test:
@@ -34,11 +41,10 @@ dev_dependencies:
 flutter:
   assets:
     - lib/images/
-    - assets/animations/chess.json
-    - assets/animations/chess_logo.json
-    - assets/animations/room.json
+    - assets/animations/
     - assets/switch/switch_button.riv
     - assets/switch/login_bear.riv
+    - assets/sound/background.mp3
   uses-material-design: true
   fonts:
     - family: Dancing Script

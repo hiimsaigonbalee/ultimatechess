@@ -1,157 +1,231 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:ultimatechess/game_mode/play_online_screen.dart';
 import 'dart:math';
+import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:ultimatechess/game_mode/play_online_screen.dart';
 
-class RoomSelectionScreen extends StatefulWidget {
+import '../enviroment/weather.dart';
+
+class JoinOrCreateRoomScreen extends StatefulWidget {
+  const JoinOrCreateRoomScreen({super.key});
+
   @override
-  _RoomSelectionScreenState createState() => _RoomSelectionScreenState();
+  State<JoinOrCreateRoomScreen> createState() => _JoinOrCreateRoomScreenState();
 }
 
-class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
-  final TextEditingController roomIdController = TextEditingController();
-  final DatabaseReference databaseRef = FirebaseDatabase.instance.ref("games");
+class _JoinOrCreateRoomScreenState extends State<JoinOrCreateRoomScreen> {
+  late IO.Socket socket;
   List<Map<String, dynamic>> rooms = [];
-
+  List<Map<String, dynamic>> filteredRooms = [];
+  TextEditingController searchController = TextEditingController();
+  bool isLoading = false;
+  String selectedWeather = "sunny";
   @override
   void initState() {
     super.initState();
-    fetchRooms();
+    connectToServer();
   }
 
-  void fetchRooms() {
-    databaseRef.onValue.listen((event) {
-      final data = event.snapshot.value as Map?;
-      if (data != null) {
+  void connectToServer() {
+    socket = IO.io(
+        'http://192.168.1.5:3000', // Địa chỉ server
+      IO.OptionBuilder()
+          .setTransports(['websocket'])
+          .enableAutoConnect()
+          .build(),
+    );
+
+    socket.onConnect((_) {
+      print('Connected to server');
+      // Yêu cầu danh sách phòng từ server
+      socket.emit("get-rooms");
+    });
+
+    socket.on("rooms-list", (data) {
+      setState(() {
+        rooms = List<Map<String, dynamic>>.from(data);
+        filteredRooms = rooms; // Hiển thị tất cả phòng ban đầu
+      });
+    });
+
+    socket.onDisconnect((_) {
+      print('Disconnected from server');
+    });
+    socket.on("error", (data) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data.toString()))
+      );
+    });
+
+    socket.on("room-full", (data) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Phòng đã đầy!"))
+      );
+    });
+  }
+
+  void filterRooms(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        filteredRooms = rooms;
+      } else {
+        filteredRooms = rooms
+            .where((room) => room['roomId']
+            .toString()
+            .toLowerCase()
+            .contains(query.toLowerCase()))
+            .toList();
+      }
+    });
+  }
+
+  void createRoom(String selectedWeather) async {
+    setState(() {
+      isLoading = true;
+    });
+
+    final roomId = generateRoomId();
+
+    // Emit tạo phòng với thời tiết được chọn
+    socket.emit("create-room", {
+      "roomId": roomId,
+      "weather": selectedWeather
+    });
+
+    // Đợi phản hồi từ server
+    socket.once("room-created", (data) {
+      setState(() {
+        isLoading = false;
+      });
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PlayOnlineScreen(
+            roomId: roomId,
+            initialWeather: selectedWeather,
+          ),
+        ),
+      );
+    });
+
+    // Thêm timeout để tránh treo UI
+    Future.delayed(Duration(seconds: 5), () {
+      if (isLoading) {
         setState(() {
-          rooms = [];
-          data.forEach((key, value) {
-            rooms.add({
-              'roomId': key,
-              'image': value['image'] ?? "assets/animations/room.json",
-              'players': value['players'],
-              'playerCount': (value['players']['player1'] != 'waiting'
-                  ? 1
-                  : 0) +
-                  (value['players']['player2'] != 'waiting' ? 1 : 0),
-            });
-          });
+          isLoading = false;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Không thể tạo phòng. Vui lòng thử lại!"))
+        );
       }
     });
   }
 
   String generateRoomId() {
-    final random = Random();
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    return String.fromCharCodes(Iterable.generate(
-      6,
-          (_) => characters.codeUnitAt(random.nextInt(characters.length)),
-    ));
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    Random random = Random();
+    return List.generate(4, (index) => chars[random.nextInt(chars.length)]).join();
   }
-
-  void showLoadingDialog(BuildContext context) {
+  void showWeatherSelectionDialog() {
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(width: 20),
-                Text("Đợi tí..."),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+      builder: (context) {
+        String selectedWeather = "sunny"; // Giá trị mặc định là "sunny"
 
-  void hideLoadingDialog(BuildContext context) {
-    Navigator.of(context, rootNavigator: true).pop();
-  }
+        // Danh sách màu sắc tương ứng với các loại thời tiết
+        final weatherColors = {
+          "sunny": Colors.orangeAccent, // Màu cam nhạt cho trời nắng
+          "rainy": Colors.blueAccent, // Màu xanh dương cho trời mưa
+          "cloudy": Colors.grey, // Màu xám cho trời nhiều mây
+          "stormy": Colors.deepPurple, // Màu tím đậm cho trời bão
+          "snowy": Colors.lightBlueAccent, // Màu xanh nhạt cho tuyết
+          "windy": Colors.greenAccent, // Màu xanh lá nhạt cho gió
+          "foggy": Colors.teal, // Màu xanh teal cho sương mù
+          "forest": Colors.green, // Màu xanh lá cây cho rừng
+        };
 
-  void createRoom() {
-    showLoadingDialog(context);
-    String roomId = generateRoomId();
-    databaseRef.child(roomId).set({
-      "players": {
-        "player1": "waiting",
-        "player2": "waiting"
-      },
-      "image": "assets/animations/room.json",
-      "currentBoardState": [],
-      "latestMove": null,
-      "turn": "player1",
-    }).then((_) {
-      hideLoadingDialog(context);
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PlayOnlineScreen(roomId: roomId),
-        ),
-      );
-    }).catchError((error) {
-      hideLoadingDialog(context);
-      _showDialog("Không tìm thấy phòng: $error");
-    });
-  }
-
-  void joinRoom(String roomId) {
-    showLoadingDialog(context);
-    databaseRef.child(roomId).get().then((snapshot) {
-      if (snapshot.exists) {
-        final data = snapshot.value as Map;
-        if (data["players"]["player1"] == "waiting") {
-          databaseRef.child(roomId).update({
-            "players/player1": "joined",
-          });
-        } else if (data["players"]["player2"] == "waiting") {
-          databaseRef.child(roomId).update({
-            "players/player2": "joined",
-          });
-        } else {
-          hideLoadingDialog(context);
-          _showDialog("Phòng đã đầy.");
-          return;
-        }
-
-        hideLoadingDialog(context);
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PlayOnlineScreen(roomId: roomId),
-          ),
-        );
-      } else {
-        hideLoadingDialog(context);
-        _showDialog("Room does not exist.");
-      }
-    }).catchError((error) {
-      hideLoadingDialog(context);
-      _showDialog("Failed to join room: $error");
-    });
-  }
-
-  void _showDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
         return AlertDialog(
-          title: Text("Error"),
-          content: Text(message),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16), // Bo góc cho hộp thoại
+          ),
+          title: const Text(
+            "Chọn hiệu ứng thời tiết",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          content: StatefulBuilder(
+            builder: (context, setState) {
+              return SizedBox(
+                height: 400, // Chiều cao tối đa của danh sách
+                width: double.maxFinite,
+                child: ListView.builder(
+                  itemCount: WeatherType.values.length,
+                  itemBuilder: (context, index) {
+                    final weather = WeatherType.values[index];
+                    final weatherName = weather.toString().split('.').last;
+
+                    // Lấy icon và màu sắc tương ứng cho thời tiết
+                    final weatherIcon = _getWeatherIcon(weatherName);
+                    final weatherColor = weatherColors[weatherName] ?? Colors.black;
+
+                    return ListTile(
+                      leading: Icon(
+                        weatherIcon,
+                        color: selectedWeather == weatherName
+                            ? weatherColor // Màu icon thay đổi theo thời tiết được chọn
+                            : Colors.grey,
+                        size: 30,
+                      ),
+                      title: Text(
+                        weatherName[0].toUpperCase() + weatherName.substring(1),
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: selectedWeather == weatherName
+                              ? weatherColor // Màu chữ thay đổi theo thời tiết được chọn
+                              : Colors.black,
+                          fontWeight: selectedWeather == weatherName
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                      tileColor: selectedWeather == weatherName
+                          ? weatherColor.withOpacity(0.2) // Màu nền nhẹ theo thời tiết
+                          : Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      onTap: () {
+                        setState(() {
+                          selectedWeather = weatherName; // Cập nhật thời tiết được chọn
+                        });
+                      },
+                    );
+                  },
+                ),
+              );
+            },
+          ),
           actions: [
             TextButton(
-              child: Text("OK"),
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Hủy",
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.pink[100],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
               onPressed: () {
-                Navigator.of(context).pop();
+                Navigator.pop(context); // Đóng hộp thoại
+                createRoom(selectedWeather); // Gọi hàm tạo phòng với thời tiết đã chọn
               },
+              child: const Text("Tạo phòng"),
             ),
           ],
         );
@@ -159,150 +233,218 @@ class _RoomSelectionScreenState extends State<RoomSelectionScreen> {
     );
   }
 
+// Hàm trả về icon tương ứng với thời tiết
+  IconData _getWeatherIcon(String weatherName) {
+    switch (weatherName) {
+      case "sunny":
+        return Icons.wb_sunny; // Biểu tượng nắng
+      case "rainy":
+        return Icons.umbrella; // Biểu tượng mưa
+      case "cloudy":
+        return Icons.cloud; // Biểu tượng mây
+      case "stormy":
+        return Icons.thunderstorm; // Biểu tượng bão
+      case "snowy":
+        return Icons.ac_unit; // Biểu tượng tuyết
+      case "windy":
+        return Icons.air; // Biểu tượng gió
+      case "foggy":
+        return Icons.foggy; // Biểu tượng sương mù
+      case "forest":
+        return Icons.nature; // Biểu tượng rừng
+      default:
+        return Icons.help; // Biểu tượng mặc định
+    }
+  }
+
+  @override
+  void dispose() {
+    socket.disconnect();
+    socket.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        // Trả về true để cho phép quay lại mà không cần xác nhận
-        return true;
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            'CHỌN PHÒNG',
-            style: TextStyle(
-              fontFamily: 'Dancing Script',
-              fontSize: 20,
-                color: Colors.white,
-                fontWeight: FontWeight.bold
-            ),
-          ),
-          backgroundColor: Colors.blue[200],
-          iconTheme: IconThemeData(
-            color: Colors.white, // Đổi màu nút "Back"
-          ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          "Phòng chơi",
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(height: 20),
-              Expanded(
-                child: GridView.builder(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 50,
-                    mainAxisSpacing: 50,
-                    childAspectRatio: 1, // Đảm bảo tỷ lệ cố định giữa chiều cao và chiều rộng
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: Stack(
+        children: [
+          // Nền chính
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.blue.shade100, Colors.blue.shade300],
+              ),
+            ),
+            child: Column(
+              children: [
+                // Thanh tìm kiếm mã phòng
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: TextField(
+                    controller: searchController,
+                    onChanged: filterRooms,
+                    decoration: InputDecoration(
+                      hintText: "Tìm mã phòng...",
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
                   ),
-                  itemCount: rooms.length,
-                  itemBuilder: (context, index) {
-                    final room = rooms[index];
-                    return GestureDetector(
-                      onTap: () {
-                        joinRoom(room['roomId']);
-                      },
-                      child: Card(
-                        elevation: 3,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center, // Căn giữa các nội dung
-                          children: [
-                            SizedBox(
-                              height: 100, // Đặt chiều cao cố định cho hình ảnh
-                              width: double.infinity,
-                              child: Lottie.asset(
-                                room['image'],
-                                fit: BoxFit.contain,
-                              ),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              "Room: ${room['roomId']}",
-                              style: TextStyle(
-                                fontSize: 16,
-                              ),
-                            ),
-                            Text(
-                              "${room['playerCount']}/2 người chơi",
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                              ),
+                ),
+
+                // Danh sách phòng
+                Expanded(
+                  child: filteredRooms.isNotEmpty
+                      ? ListView.builder(
+                    itemCount: filteredRooms.length,
+                    itemBuilder: (context, index) {
+                      final room = filteredRooms[index];
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(15),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
                             ),
                           ],
                         ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          leading: CircleAvatar(
+                            backgroundColor: room['status'] == "Đang chờ"
+                                ? Colors.green
+                                : Colors.orange,
+                            child: Icon(
+                              room['status'] == "Đang chờ"
+                                  ? Icons.people_outline
+                                  : Icons.sports_esports,
+                              color: Colors.white,
+                            ),
+                          ),
+                          title: Text(
+                            "Phòng: ${room['roomId']}",
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "${room['players']} người chơi • ${room['status']}",
+                                style: TextStyle(color: Colors.grey.shade600),
+                              ),
+                              Row(
+                                children: [
+                                  Icon(
+                                    _getWeatherIcon(room['weather']), // Hàm lấy icon thời tiết
+                                    size: 16,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    room['weather'].toString(), // Hiển thị thông tin thời tiết
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          trailing: ElevatedButton(
+                            onPressed: room['status'] == "Đang chờ"
+                                ? () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => PlayOnlineScreen(
+                                    roomId: room['roomId'],
+                                    initialWeather: selectedWeather,
+                                  ),
+                                ),
+                              );
+                            }
+                                : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: room['status'] == "Đang chờ"
+                                  ? Colors.blue.shade600
+                                  : Colors.grey,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                            child: const Text("Vào phòng"),
+                          ),
+                        ),
+                      );
+                    },
+                  )
+                      : const Center(
+                    child: Text(
+                      "Không có phòng nào được tìm thấy",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
-                    );
-                  },
-                ),
-              ),
-              SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: createRoom,
-                icon: Icon(Icons.add_circle, size: 20, color: Colors.white),
-                label: Text(
-                  'Tạo phòng mới',
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: Colors.white,
+                    ),
                   ),
                 ),
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  backgroundColor: Colors.blue[400],
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-              SizedBox(height: 20),
-              TextField(
-                controller: roomIdController,
-                decoration: InputDecoration(
-                  labelText: 'Nhâp ID phòng',
-                  labelStyle: TextStyle(
-                    color: Colors.grey[400],
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  prefixIcon: Icon(Icons.vpn_key, color: Colors.blue[200]),
-                ),
-              ),
-              SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: () {
-                  String roomId = roomIdController.text.trim();
-                  if (roomId.isNotEmpty) {
-                    joinRoom(roomId);
-                  } else {
-                    _showDialog("Vui lòng nhập ID phòng hợp lệ.");
-                  }
-                },
-                icon: Icon(Icons.login, size: 20, color: Colors.white),
-                label: Text(
-                  'Vào phòng',
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: Colors.white,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  backgroundColor: Colors.blue[400],
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-              SizedBox(height: 40),
-            ],
+              ],
+            ),
           ),
-        ),
+
+          // Loading indicator (nếu đang tạo phòng)
+          if (isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.5),
+              child: Center(
+                child: Lottie.asset(
+                  'assets/animations/loading.json', // Đường dẫn tới file Lottie
+                  width: 150,
+                  height: 150,
+                ),
+              ),
+            ),
+        ],
+      ),
+
+      // FloatingActionButton để tạo phòng
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          showWeatherSelectionDialog(); // Hiển thị hộp thoại chọn thời tiết
+        },
+        backgroundColor: Colors.blue,
+        child: const Icon(Icons.add),
       ),
     );
   }

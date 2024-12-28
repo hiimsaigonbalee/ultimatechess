@@ -20,6 +20,7 @@ class _SignUpPageState extends State<SignUpPage> {
 
   bool _showPassword = false;
   bool _showConfirmPassword = false;
+  bool _isLoading = false; // Trạng thái tải
 
   @override
   void dispose() {
@@ -29,39 +30,67 @@ class _SignUpPageState extends State<SignUpPage> {
     super.dispose();
   }
 
-  void onSignUpClicked() async {
+  bool isValidEmail(String email) {
+    final RegExp emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
+    return emailRegex.hasMatch(email);
+  }
+
+  void updateInvalidStates() {
     setState(() {
-      _emailInvalid = !_emailController.text.contains("@");
+      _emailInvalid = !isValidEmail(_emailController.text);
       _passwordInvalid = _passwordController.text.length < 6;
       _confirmPasswordInvalid = _passwordController.text != _confirmPasswordController.text;
     });
+  }
+
+  void onSignUpClicked() async {
+    updateInvalidStates();
 
     if (!_emailInvalid && !_passwordInvalid && !_confirmPasswordInvalid) {
+      setState(() {
+        _isLoading = true;
+      });
+
       try {
         await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: _emailController.text,
+          email: _emailController.text.trim(),
           password: _passwordController.text,
         );
-        // Hiển thị thông báo thành công
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Tạo tài khoản thành công!')),
         );
-        // Quay về trang đăng nhập
+
         Navigator.pop(context);
       } on FirebaseAuthException catch (e) {
+        String errorMessage = 'Đã có lỗi xảy ra.';
+        if (e.code == 'email-already-in-use') {
+          errorMessage = 'Email đã được sử dụng.';
+        } else if (e.code == 'weak-password') {
+          errorMessage = 'Mật khẩu quá yếu.';
+        } else if (e.code == 'invalid-email') {
+          errorMessage = 'Email không hợp lệ.';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi: ${e.message}')),
+          SnackBar(content: Text(errorMessage)),
         );
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
 
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () {
             Navigator.pop(context);
           },
@@ -75,23 +104,22 @@ class _SignUpPageState extends State<SignUpPage> {
               minHeight: MediaQuery.of(context).size.height,
             ),
             color: Colors.white,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center, // Căn giữa theo trục dọc
-              crossAxisAlignment: CrossAxisAlignment.center, // Căn giữa theo trục ngang
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator()) // Trạng thái tải
+                : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 20), // Khoảng cách dưới animation
+                  padding: const EdgeInsets.only(bottom: 20),
                   child: Container(
-                    height: 150, // Chiều cao mong muốn
-                    width: 150,  // Chiều rộng mong muốn
-                    child: Lottie.asset(
-                      'assets/animations/chess.json', // Đường dẫn đến tệp Lottie
-                      fit: BoxFit.cover,
-                    ),
+                    height: 150,
+                    width: 150,
+                    child: Lottie.asset('assets/animations/chess.json', fit: BoxFit.cover),
                   ),
                 ),
                 const Padding(
-                  padding: EdgeInsets.only(bottom: 60), // Khoảng cách dưới tiêu đề
+                  padding: EdgeInsets.only(bottom: 60),
                   child: Text(
                     'ULTIMATE CHESS',
                     style: TextStyle(
@@ -99,7 +127,7 @@ class _SignUpPageState extends State<SignUpPage> {
                       fontFamily: 'Permanent Marker',
                       color: Colors.black,
                     ),
-                    textAlign: TextAlign.center, // Căn giữa tiêu đề
+                    textAlign: TextAlign.center,
                   ),
                 ),
                 Padding(
@@ -128,7 +156,7 @@ class _SignUpPageState extends State<SignUpPage> {
                         obscureText: !_showPassword,
                         decoration: InputDecoration(
                           labelText: 'MẬT KHẨU',
-                          errorText: _passwordInvalid ? "Mật khẩu không hợp lệ" : null,
+                          errorText: _passwordInvalid ? "Mật khẩu quá ngắn" : null,
                           labelStyle: const TextStyle(
                             color: Color(0xff888888),
                             fontSize: 15,
@@ -136,7 +164,11 @@ class _SignUpPageState extends State<SignUpPage> {
                         ),
                       ),
                       GestureDetector(
-                        onTap: onToggleShowPass,
+                        onTap: () {
+                          setState(() {
+                            _showPassword = !_showPassword;
+                          });
+                        },
                         child: Text(
                           _showPassword ? "ẨN" : "HIỆN",
                           style: const TextStyle(
@@ -157,7 +189,7 @@ class _SignUpPageState extends State<SignUpPage> {
                       TextField(
                         style: const TextStyle(fontSize: 18, color: Colors.black),
                         controller: _confirmPasswordController,
-                        obscureText: !_showConfirmPassword, // Dùng biến điều khiển hiển thị
+                        obscureText: !_showConfirmPassword,
                         decoration: InputDecoration(
                           labelText: 'XÁC NHẬN MẬT KHẨU',
                           errorText: _confirmPasswordInvalid ? "Mật khẩu không khớp" : null,
@@ -170,7 +202,7 @@ class _SignUpPageState extends State<SignUpPage> {
                       GestureDetector(
                         onTap: () {
                           setState(() {
-                            _showConfirmPassword = !_showConfirmPassword; // Đổi trạng thái hiển thị
+                            _showConfirmPassword = !_showConfirmPassword;
                           });
                         },
                         child: Text(
@@ -202,18 +234,11 @@ class _SignUpPageState extends State<SignUpPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  void onToggleShowPass() {
-    setState(() {
-      _showPassword = !_showPassword;
-    });
   }
 }
